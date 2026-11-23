@@ -19,3 +19,9 @@ dependencies = [
     "tqdm>=4.70.1",
     "xgboost>=3.4.1",
 ]
+
+# Rend le dossier src/titanic importable depuis les notebooks (« from titanic.features import ... »),
+# installé en mode éditable par « uv sync » : une modif de features.py est prise en compte au redémarrage du kernel.
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14"]
+build-backend = "uv_build"
