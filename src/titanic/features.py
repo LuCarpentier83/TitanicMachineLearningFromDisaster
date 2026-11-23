@@ -72,11 +72,10 @@ def ticket(t):
 
 
 def cabin(c):
-    # Défaut connu : "C23 C25" ou "F G73" -> int() plante -> tout NaN, pont compris
     try:
-        return np.array([[1 * (v == c[0]) for v in DECKS] + [int(c[1:])]])
+        return np.array([[1 * (v == c[0]) for v in DECKS]])
     except Exception:
-        return np.array([[np.nan for _ in range(len(DECKS) + 1)]])
+        return np.array([[np.nan for _ in range(len(DECKS))]])
 
 
 def embarked(p):
@@ -115,7 +114,7 @@ class Func_To_Transformer:
         return CustomFunctionTransformer(out_func, self.cols_in, self.cols_out)
 
 
-cabin_transformer = Func_To_Transformer(cabin, ["Cabin"], ["Pont_" + v for v in DECKS] + ["NumCab"])
+cabin_transformer = Func_To_Transformer(cabin, ["Cabin"], ["Pont_" + v for v in DECKS])
 ticket_transformer = Func_To_Transformer(ticket, ["Ticket"], ["Ticket"])
 sex_transformer = Func_To_Transformer(sex, ["Sex"], ["Sex"])
 embarked_transformer = Func_To_Transformer(embarked, ["Embarked"], ["Port_" + p for p in PORTS])
@@ -154,15 +153,6 @@ def name_title():
         ("one_hot_encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
     ])
 
-
-def name_tfidf():
-    """Encodage du pipeline GBC : TF-IDF sur les mots du nom (défaut connu : apprend des prénoms)."""
-    return Pipeline([
-        ("tfidf", TfidfVectorizer(max_features=100)),
-        ("to_dense", FunctionTransformer(lambda x: x.todense())),
-    ])
-
-
 # --------------------------------------------------------------------------------------
 # Le morceau de pipeline que les notebooks importent
 # --------------------------------------------------------------------------------------
@@ -175,20 +165,14 @@ def make_column_transformer(name="title"):
     """
     if name == "title":
         name_step = ("name", name_title(), ["Name"])
-    elif name == "tfidf":
-        name_step = ("tdidf", name_tfidf(), "Name")
     else:
         raise ValueError(f"name doit valoir 'title' ou 'tfidf', pas {name!r}")
 
     ct = ColumnTransformer(transformers=[
+        ("drop_id", "drop", ["PassengerId", "Ticket"]),
         ("cabin", cabin_transformer.get_transformer, cabin_transformer.cols_in),
-        ("ticket", ticket_transformer.get_transformer, ticket_transformer.cols_in),
         ("sex", sex_transformer.get_transformer, sex_transformer.cols_in),
         ("embarked", embarked_transformer.get_transformer, embarked_transformer.cols_in),
         name_step,
     ], remainder="passthrough")
-
-    if name == "tfidf":
-        # le TF-IDF renvoie une np.matrix : on la repasse en tableau numpy
-        return Pipeline([("column_tranformer", ct), ("to_array", FunctionTransformer(lambda x: x.A))])
     return ct
