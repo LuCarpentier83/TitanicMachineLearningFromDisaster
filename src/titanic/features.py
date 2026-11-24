@@ -48,7 +48,7 @@ def save_submission(test, ypred, name):
 # Valeurs possibles (avant : calculées dans le notebook depuis X_train)
 # --------------------------------------------------------------------------------------
 
-DECKS = ["A", "B", "C", "D", "E", "F", "G", "T"]  # 1re lettre de Cabin
+DECKS = ["A", "B", "C", "D", "E", "F", "G", "T", "U"]  # 1re lettre de Cabin, U = inconnue
 PORTS = ["C", "Q", "S"]                            # Embarked
 
 
@@ -72,17 +72,13 @@ def ticket(t):
 
 
 def cabin(c):
-    try:
-        return np.array([[1 * (v == c[0]) for v in DECKS]])
-    except Exception:
-        return np.array([[np.nan for _ in range(len(DECKS))]])
+    deck = c[0] if isinstance(c, str) else "U"   # NaN n'est pas un str -> pont "U"
+    return np.array([[1 * (v == deck) for v in DECKS]])
 
 
 def embarked(p):
-    try:
-        return np.array([[1 * (v == p[0]) for v in PORTS]])
-    except Exception:
-        return np.array([[np.nan for _ in range(len(PORTS))]])
+    port = p if isinstance(p, str) else "S"   # 2 manquantes (Icard, Stone) : port le plus fréquent, et le vrai
+    return np.array([[1 * (v == port) for v in PORTS]])
 
 
 # --------------------------------------------------------------------------------------
