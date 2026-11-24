@@ -120,8 +120,14 @@ embarked_transformer = Func_To_Transformer(embarked, ["Embarked"], ["Port_" + p 
 # Name : deux encodages possibles
 # --------------------------------------------------------------------------------------
 
+# Titres de femmes ramenés vers Miss / Mrs, pour que Rare ne contienne que des hommes
+# (sauf « Dr » : une seule femme, et le nom seul ne dit pas le sexe).
+TITLE_MAP = {"Mlle": "Miss", "Ms": "Miss",
+             "Mme": "Mrs", "Dona": "Mrs", "Lady": "Mrs", "Countess": "Mrs"}
+
+
 class NameExtractor(BaseEstimator, TransformerMixin):
-    """Name -> titre : Mr / Mrs / Miss / Master, sinon Rare."""
+    """Name -> titre : Mr / Mrs / Miss / Master, sinon Rare (titres de femmes regroupés via TITLE_MAP)."""
 
     def __init__(self, rare_titles=None):
         self.rare_titles = rare_titles if rare_titles else [
@@ -137,6 +143,7 @@ class NameExtractor(BaseEstimator, TransformerMixin):
         for name in X:
             match = re.search(r" ([A-Za-z]+)\.", name)
             title = match.group(1) if match else "Unknown"
+            title = TITLE_MAP.get(title, title)
             title = title if title in ["Mr", "Mrs", "Miss", "Master"] else "Rare"
             titles.append(title)
         return np.array(titles).reshape(-1, 1)
