@@ -149,6 +149,32 @@ def name_title():
         ("one_hot_encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
     ])
 
+
+# --------------------------------------------------------------------------------------
+# Age : âges manquants remplis par la médiane du titre
+# --------------------------------------------------------------------------------------
+
+class TitleMedianAge(BaseEstimator, TransformerMixin):
+    """(Name, Age) -> Age, les âges manquants remplis par la médiane du titre.
+
+    Les médianes sont apprises au fit, donc sur la partie entraînement de chaque fold
+    seulement (pas de fuite). Remplace l'imputer pour l'âge : avec Ridge, il devinait
+    des âges négatifs (ex. Sage, Master. Thomas Henry : -9.9 ans).
+    """
+
+    def fit(self, X, y=None):
+        titles = NameExtractor().transform(X[["Name"]]).ravel()
+        self.medians_ = pd.Series(X["Age"].values).groupby(titles).median().to_dict()
+        self.global_ = X["Age"].median()   # secours si un titre n'a aucun âge connu
+        return self
+
+    def transform(self, X):
+        titles = NameExtractor().transform(X[["Name"]]).ravel()
+        age = X["Age"].values.astype(float)
+        med = np.array([self.medians_.get(t, self.global_) for t in titles])
+        return np.where(np.isnan(age), med, age).reshape(-1, 1)
+
+
 # --------------------------------------------------------------------------------------
 # Le morceau de pipeline que les notebooks importent
 # --------------------------------------------------------------------------------------
@@ -157,7 +183,7 @@ def make_column_transformer(name="title"):
     """Colonnes brutes -> colonnes numériques (avec des NaN, imputés plus loin dans le pipeline).
 
     name="title" : comme le pipeline RF_KNN ; name="tfidf" : comme le pipeline GBC.
-    Défaut connu : remainder="passthrough" laisse passer PassengerId, Pclass, Age, SibSp, Parch, Fare.
+    Age est rempli ici (médiane du titre) ; remainder="passthrough" laisse passer Pclass, SibSp, Parch, Fare.
     """
     if name == "title":
         name_step = ("name", name_title(), ["Name"])
@@ -170,5 +196,6 @@ def make_column_transformer(name="title"):
         ("sex", sex_transformer.get_transformer, sex_transformer.cols_in),
         ("embarked", embarked_transformer.get_transformer, embarked_transformer.cols_in),
         name_step,
+        ("age", TitleMedianAge(), ["Name", "Age"]),
     ], remainder="passthrough")
     return ct
