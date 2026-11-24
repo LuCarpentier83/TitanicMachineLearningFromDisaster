@@ -3,3 +3,4 @@ date,file,sha256,message,public_score
 2026-11-23 17:12,gbc.csv,d9937a4717d7ea41757d14adeb3e6b7ba49a49fa53be64c78074118046bde8d5,"title, removed passengerid GBC",0.74641
 2026-11-23 17:15,rf.csv,d9923edafdb6501260b2213a3890bf320f1c25672223cbc9323aa7608031e533,"title, removed passengerid RFC",0.75358
 2026-11-23 17:23,gbc.csv,3b1a30d22160d32a70b05b59c0bfb949226dfab1f50806caab9e79d526005d1f,removed number of cabins to check overfitting GBC,0.77511
+2026-11-24 22:30,gbc.csv,e34394b577223f460f53d3ea13f59c310edaccbbffc967827d5c23bd249a710e,"GBC : pont U, Embarked S, age mediane titre, titres regroupes",0.77511
