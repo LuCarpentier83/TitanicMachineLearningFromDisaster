@@ -23,6 +23,10 @@ uv sync --python 3.13
 echo ">> Enregistrement du kernel Jupyter « Python (titanic) »"
 uv run python -m ipykernel install --user --name titanic --display-name "Python (titanic)"
 
+# 4. hooks git du repo (refus des trailers Co-Authored-By / attribution IA)
+echo ">> Activation des hooks git (.githooks)"
+git config core.hooksPath .githooks
+
 cat <<'EOF'
 
 Installation terminée.

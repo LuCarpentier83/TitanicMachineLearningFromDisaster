@@ -24,6 +24,11 @@ Write-Host ">> Enregistrement du kernel Jupyter « Python (titanic) »"
 uv run python -m ipykernel install --user --name titanic --display-name "Python (titanic)"
 if ($LASTEXITCODE -ne 0) { throw "l'enregistrement du kernel a échoué" }
 
+# 4. hooks git du repo (refus des trailers Co-Authored-By / attribution IA)
+Write-Host ">> Activation des hooks git (.githooks)"
+git config core.hooksPath .githooks
+if ($LASTEXITCODE -ne 0) { throw "l'activation des hooks git a échoué" }
+
 Write-Host ""
 Write-Host "Installation terminée."
 Write-Host "  JupyterLab : uv run jupyter lab"

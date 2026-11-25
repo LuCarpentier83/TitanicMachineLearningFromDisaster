@@ -1,0 +1,11 @@
+#!/bin/sh
+# Refuse tout commit dont le message contient une attribution Claude / IA
+# (trailer « Co-Authored-By », « Generated with Claude Code »...).
+# Activé par install.sh / install.ps1 : git config core.hooksPath .githooks
+
+if grep -qiE '^co-authored-by:|generated with \[?claude|noreply@anthropic\.com' "$1"; then
+    echo "REFUSE : le message de commit contient une attribution Claude / IA :" >&2
+    grep -niE '^co-authored-by:|generated with \[?claude|noreply@anthropic\.com' "$1" >&2
+    echo "Retire ces lignes puis recommite." >&2
+    exit 1
+fi
