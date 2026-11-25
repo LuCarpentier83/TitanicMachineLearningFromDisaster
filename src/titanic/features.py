@@ -266,8 +266,36 @@ class GroupSurvival(BaseEstimator, TransformerMixin):
         return np.array(["GroupSurv"])
 
 
-def group_rules(X_train, y_train, X_new, base_pred):
-    """Corrige des prédictions avec la survie du groupe (même ticket) vue dans le train.
+def _ticket_parts(tickets):
+    """Ticket -> (préfixe normalisé, numéro final). "STON/O2. 3101270" -> ("STONO2", 3101270).
+
+    Ticket sans préfixe -> préfixe "" ; numéro non numérique (ex. "LINE") -> NaN.
+    """
+    parts = tickets.str.rsplit(" ", n=1)
+    num = pd.to_numeric(parts.str[-1], errors="coerce").values
+    pre = np.where(parts.str.len() > 1,
+                   parts.str[0].str.upper().str.replace(r"[^A-Z0-9]", "", regex=True), "")
+    return pre, num
+
+
+def _family_key(X):
+    """Nom de famille + classe + port d'embarquement (manquant = S), ex. "Jussila|3|S".
+
+    La classe et le port évitent de réunir deux familles sans lien qui portent le même nom.
+    """
+    surname = X["Name"].str.split(",").str[0].str.strip()
+    return (surname + "|" + X["Pclass"].astype(str) + "|" + X["Embarked"].fillna("S")).values
+
+
+def group_rules(X_train, y_train, X_new, base_pred, max_ticket_gap=None):
+    """Corrige des prédictions avec la survie du groupe vue dans le train.
+
+    Groupe d'un passager = les passagers du train qui ont le même ticket. Avec
+    max_ticket_gap=k, on y ajoute ceux qui ont le même nom de famille, la même classe,
+    le même port, le même préfixe de ticket et un numéro de ticket à au plus k d'écart :
+    une famille a parfois acheté des tickets qui se suivent (Jussila 4136 / 4137).
+    k=1 est le seul écart validé sur le train (toutes les familles retrouvées y sont à 1) ;
+    un écart plus grand relie aussi des homonymes sans lien (les Andersson).
 
     On ne regarde que les femmes et les garçons (titre Master) du groupe : le sort
     des hommes adultes ne dit rien (ils mouraient presque tous, quel que soit le groupe).
@@ -277,9 +305,28 @@ def group_rules(X_train, y_train, X_new, base_pred):
     """
     title_tr = NameExtractor().transform(X_train[["Name"]]).ravel()
     wc = (X_train["Sex"].values == "female") | (title_tr == "Master")
-    g = GroupSurvival().fit(X_train[wc], np.asarray(y_train)[wc])
-    n = X_new["Ticket"].map(g.count_).fillna(0).values
-    s = X_new["Ticket"].map(g.sum_).fillna(0).values
+    Xw = X_train[wc]
+
+    # Membres de référence (femmes/garçons du train) et passagers à corriger, en positions 0..n-1
+    pre_r, num_r = _ticket_parts(Xw["Ticket"])
+    ref = pd.DataFrame({"ref": np.arange(len(Xw)), "Ticket": Xw["Ticket"].values,
+                        "key": _family_key(Xw), "pre": pre_r, "num": num_r,
+                        "surv": np.asarray(y_train, dtype=float)[wc]})
+    pre_n, num_n = _ticket_parts(X_new["Ticket"])
+    new = pd.DataFrame({"row": np.arange(len(X_new)), "Ticket": X_new["Ticket"].values,
+                        "key": _family_key(X_new), "pre": pre_n, "num": num_n})
+
+    # Liens (passager, membre de référence) : même ticket, puis éventuellement nom + ticket proche
+    links = [new.merge(ref, on="Ticket")[["row", "ref", "surv"]]]
+    if max_ticket_gap is not None:
+        m = new.merge(ref, on="key", suffixes=("", "_r"))
+        m = m[(m["pre"] == m["pre_r"]) & ((m["num"] - m["num_r"]).abs() <= max_ticket_gap)]
+        links.append(m[["row", "ref", "surv"]])
+    links = pd.concat(links).drop_duplicates(["row", "ref"])
+    agg = links.groupby("row")["surv"].agg(["count", "sum"]).reindex(range(len(X_new)))
+    n = agg["count"].fillna(0).values
+    s = agg["sum"].fillna(0).values
+
     title_new = NameExtractor().transform(X_new[["Name"]]).ravel()
     pred = np.asarray(base_pred).copy()
     pred[(X_new["Sex"].values == "female") & (n > 0) & (s == 0)] = 0
