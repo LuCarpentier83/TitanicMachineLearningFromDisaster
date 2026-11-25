@@ -5,3 +5,4 @@ date,file,sha256,message,public_score
 2026-11-23 17:23,gbc.csv,3b1a30d22160d32a70b05b59c0bfb949226dfab1f50806caab9e79d526005d1f,removed number of cabins to check overfitting GBC,0.77511
 2026-11-24 22:30,gbc.csv,e34394b577223f460f53d3ea13f59c310edaccbbffc967827d5c23bd249a710e,"GBC : pont U, Embarked S, age mediane titre, titres regroupes",0.77511
 2026-11-25 15:09,gbc.csv,69e7ea08b5705b8d211082f81e3545801c1b5f6b89e8810ca3373721799354a4,"GBC : FamilySize, TicketGroup, FarePerPerson (CV 0.8323)",0.73684
+2026-11-25 15:27,gbc.csv,4e73f4ef0e51f02d52b4f36171d02afbf90ee82e98f1a4bc64fe4ceea9d7ac99,"GBC : FamilySize + TicketGroup, Fare brut (CV 0.8310)",0.76794
