@@ -1,18 +1,18 @@
 # Titanic – Machine Learning from Disaster
 
-Compétition Kaggle d'initiation : prédire quels passagers du Titanic ont survécu
-(`Survived` = 1) à partir de leurs informations (classe, sexe, âge, famille, ticket, prix…).
-Le score Kaggle est l'**accuracy** (part de bonnes réponses) sur les 418 passagers du test :
-chaque passager vaut 1/418 ≈ **0,24 point**.
+Kaggle's getting-started competition: predict which Titanic passengers survived
+(`Survived` = 1) from their information (class, sex, age, family, ticket, fare…).
+The Kaggle score is **accuracy** (share of correct predictions) on the 418 test passengers:
+each passenger is worth 1/418 ≈ **0.24 point**.
 
-**Meilleur score : 0.80143** (335 / 418), avec des règles simples (sexe + survie de la famille +
-femmes seules de 3ᵉ classe), sans aucun modèle de machine learning.
+**Best score: 0.80143** (335 / 418), using simple rules (sex + family survival +
+solo third-class women), without any machine learning model.
 
 ---
 
-## Installation
+## Setup
 
-L'environnement Python est géré par [uv](https://docs.astral.sh/uv/) (versions exactes dans `uv.lock`).
+The Python environment is managed by [uv](https://docs.astral.sh/uv/) (exact versions in `uv.lock`).
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows
@@ -21,174 +21,174 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows
 ./install.sh                                             # Linux / macOS
 ```
 
-Le script installe uv si besoin, crée `.venv` avec les dépendances, enregistre le kernel Jupyter
-« Python (titanic) » et active les hooks git (`.githooks/commit-msg` refuse tout commit contenant
-une attribution IA). Il est relançable sans risque.
+The script installs uv if needed, creates `.venv` with the dependencies, registers the Jupyter kernel
+"Python (titanic)" and enables the git hooks (`.githooks/commit-msg` rejects any commit containing
+an AI attribution). It is safe to re-run.
 
-Soumettre à Kaggle demande un jeton API Kaggle (`%USERPROFILE%\.kaggle\access_token` ou `kaggle.json`).
+Submitting to Kaggle requires a Kaggle API token (`%USERPROFILE%\.kaggle\access_token` or `kaggle.json`).
 
-## Structure
+## Layout
 
-| Chemin | Rôle |
+| Path | Purpose |
 |---|---|
-| `src/titanic/features.py` | Tout le code partagé : nettoyage (morceaux de pipeline), CV groupée, survie du groupe, règles |
+| `src/titanic/features.py` | All shared code: cleaning (pipeline pieces), grouped CV, group survival, rules |
 | `notebooks/02_random_forest.ipynb` | Random Forest |
-| `notebooks/03_gradient_boosting.ipynb` | Gradient Boosting (GBC), CV groupée par ticket |
-| `notebooks/04_survie_groupe.ipynb` | Survie du groupe (feature `GroupSurv` et règles femmes/garçons) |
-| `scripts/submit.py` | Soumission Kaggle : vérifie le format, refuse un fichier déjà soumis, attend le score, note tout dans `submissions/history.csv` |
-| `submissions/` | Fichiers soumis et historique des scores |
-| `data/train.csv`, `data/test.csv` | Données Kaggle |
-| `data/ntrain.csv`, `ntest.csv`, `submit.csv` | Anciens CSV pré-nettoyés (avant le passage aux pipelines), plus utilisés |
+| `notebooks/03_gradient_boosting.ipynb` | Gradient Boosting (GBC), CV grouped by ticket |
+| `notebooks/04_survie_groupe.ipynb` | Group survival (`GroupSurv` feature and woman/boy rules) |
+| `scripts/submit.py` | Kaggle submission: checks the format, refuses an already-submitted file, waits for the score, logs everything in `submissions/history.csv` |
+| `submissions/` | Submitted files and score history |
+| `data/train.csv`, `data/test.csv` | Kaggle data |
+| `data/ntrain.csv`, `ntest.csv`, `submit.csv` | Old pre-cleaned CSVs (from before the switch to pipelines), no longer used |
 
 ```powershell
 uv run jupyter lab                                                    # notebooks
-uv run python scripts/submit.py submissions/x.csv -m "description"    # soumettre
-uv run python scripts/submit.py --list                                # dernières soumissions Kaggle
+uv run python scripts/submit.py submissions/x.csv -m "description"    # submit
+uv run python scripts/submit.py --list                                # latest Kaggle submissions
 ```
 
-### Reproduire la meilleure soumission (0.80143)
+### Reproducing the best submission (0.80143)
 
 ```python
 from titanic.features import load_data, group_rules, solo_female_rule, save_submission
 
 X, y, test = load_data()
-pred = (test.Sex == "female").astype(int).values           # 1. modèle « genre » : femmes vivent, hommes meurent
-pred = group_rules(X, y, test, pred, max_ticket_gap=1)      # 2. corrections par la survie de la famille
-pred = solo_female_rule(test, pred)                         # 3. femmes seules de 3e classe
+pred = (test.Sex == "female").astype(int).values           # 1. gender model: women live, men die
+pred = group_rules(X, y, test, pred, max_ticket_gap=1)      # 2. corrections from family survival
+pred = solo_female_rule(test, pred)                         # 3. solo third-class women
 save_submission(test, pred, "genre_regles_nom_femmes_seules")
 ```
 
 ---
 
-## Les investigations, dans l'ordre
+## Investigations, in order
 
-### Vocabulaire
+### Glossary
 
-- **CV (validation croisée)** : on coupe le train en 5 parts, on apprend sur 4 et on mesure sur la 5ᵉ, cinq fois,
-  et on répète 5 fois (« 5 × 5 »). Sert à estimer le score sur des données jamais vues sans gaspiller de soumission.
-- **CV stratifiée** : chaque part garde la même proportion de survivants que le train.
-- **CV groupée par ticket** : un même ticket (une famille, un groupe de voyage) n'est jamais à la fois en apprentissage et en validation.
-- **Surapprentissage** : le modèle apprend des détails propres au train qui ne se retrouvent pas ailleurs ; il brille en CV et chute sur Kaggle.
-- **Fuite de données** : le modèle voit, pendant l'apprentissage, une information qu'il n'aurait pas en vrai (par exemple sa propre réponse).
-- **Leave-one-out** : pour un passager du train, on calcule une statistique de son groupe *sans lui*, pour ne pas lui donner sa propre réponse.
-- **RF / GBC** : Random Forest et Gradient Boosting, deux familles de modèles faits d'arbres de décision.
+- **CV (cross-validation)**: split the training set into 5 parts, train on 4 and score on the 5th, five times,
+  and repeat 5 times ("5 × 5"). Estimates the score on unseen data without spending a submission.
+- **Stratified CV**: each part keeps the same share of survivors as the training set.
+- **Ticket-grouped CV**: a given ticket (a family, a travel group) is never in both training and validation.
+- **Overfitting**: the model learns details specific to the training set that don't carry over; it shines in CV and drops on Kaggle.
+- **Data leakage**: during training the model sees information it wouldn't have in reality (e.g. its own answer).
+- **Leave-one-out**: for a training passenger, compute a group statistic *without them*, so they never see their own answer.
+- **RF / GBC**: Random Forest and Gradient Boosting, two families of models built from decision trees.
 
-### 1. Modèles d'arbres (RF, GBC) — plafond vers 0.775
+### 1. Tree models (RF, GBC) — ceiling around 0.775
 
-Nettoyage dans `features.py` : pont de la cabine (inconnue = pont « U »), port manquant = S,
-titres extraits du nom (Mr, Mrs, Miss, Master, « Rare » qui ne contient que des hommes),
-âge manquant = médiane du titre, puis RF et GBC.
+Cleaning in `features.py`: cabin deck (unknown = deck "U"), missing port = S,
+titles extracted from the name (Mr, Mrs, Miss, Master, "Rare" containing only men),
+missing age = median of the title, then RF and GBC.
 
 | Version | CV | Kaggle |
 |---|---|---|
-| RF + KNN (premier modèle) | | 0.77511 |
-| GBC titres, sans PassengerId | | 0.74641 |
-| RF titres, sans PassengerId | | 0.75358 |
-| GBC sans nombre de cabines | | 0.77511 |
-| GBC pont U, port S, âge par titre, titres regroupés | | 0.77511 |
+| RF + KNN (first model) | | 0.77511 |
+| GBC titles, no PassengerId | | 0.74641 |
+| RF titles, no PassengerId | | 0.75358 |
+| GBC without cabin count | | 0.77511 |
+| GBC deck U, port S, age by title, grouped titles | | 0.77511 |
 | GBC + FamilySize, TicketGroup, **FarePerPerson** | 0.8323 | **0.73684** |
-| GBC + FamilySize, TicketGroup, Fare brut | 0.8310 | 0.76794 |
+| GBC + FamilySize, TicketGroup, raw Fare | 0.8310 | 0.76794 |
 
-**Constat** : le GBC perd ~6 points entre la CV (0.83) et Kaggle (0.77), il surapprend.
-Le piège **FarePerPerson** (prix divisé par le nombre de passagers du ticket) le montre : meilleure CV, pire score Kaggle.
+**Finding**: the GBC loses ~6 points between CV (0.83) and Kaggle (0.77); it overfits.
+The **FarePerPerson** trap (fare divided by the number of passengers on the ticket) shows it: best CV, worst Kaggle score.
 
-### 2. CV groupée par ticket — n'aurait pas détecté le piège
+### 2. Ticket-grouped CV — would not have caught the trap
 
-Hypothèse : la CV stratifiée est trop optimiste parce que des membres d'une même famille se retrouvent
-en apprentissage *et* en validation. On a donc mis en place une CV où un ticket n'est jamais coupé (`group_cv`).
+Hypothesis: stratified CV is too optimistic because members of the same family end up in both training
+*and* validation. So we set up a CV where a ticket is never split (`group_cv`).
 
-- Scores plus bas, plus honnêtes : GBC 0.8193, RF 0.8063.
-- Mais elle classait **toujours la version FarePerPerson en tête** : elle n'aurait pas évité le piège.
+- Lower, more honest scores: GBC 0.8193, RF 0.8063.
+- But it **still ranked the FarePerPerson version first**: it would not have avoided the trap.
 
-### 3. Survie du groupe — le vrai levier
+### 3. Group survival — the real lever
 
-Idée : sur le Titanic, les femmes et les enfants d'une même famille ont souvent vécu ou péri ensemble.
+Idea: on the Titanic, women and children of the same family often lived or died together.
 
-**Feature `GroupSurv`** (taux de survie des *autres* membres du même ticket, leave-one-out sur le train) :
-seulement **+0,2 pt** dans le GBC. L'information est forte mais ne concerne que peu de passagers, et les arbres la noient.
-À noter : la CV groupée est inadaptée à cette feature (0 % des validations ont un groupe connu,
-contre 36 % du test Kaggle) ; il faut la CV stratifiée (34 %).
+**`GroupSurv` feature** (survival rate of the *other* members of the same ticket, leave-one-out on the training set):
+only **+0.2 pt** in the GBC. The signal is strong but concerns few passengers, and the trees drown it.
+Note: ticket-grouped CV is unsuitable for this feature (0% of validation passengers have a known group,
+versus 36% of the Kaggle test set); stratified CV is needed (34%).
 
-**Règles appliquées après le modèle** (`group_rules`), en ne regardant que les femmes et garçons (titre Master) du groupe :
-- femme dont toutes les femmes/garçons connus du groupe sont morts → **meurt** ;
-- garçon dont toutes les femmes/garçons connus du groupe ont survécu → **survit**.
+**Rules applied after the model** (`group_rules`), looking only at the women and boys (title Master) of the group:
+- a woman whose known women/boys in the group all died → **dies**;
+- a boy whose known women/boys in the group all survived → **survives**.
 
-| Version | CV strat. | Kaggle |
+| Version | Strat. CV | Kaggle |
 |---|---|---|
-| Genre seul (femmes vivent, hommes meurent) | 0.7867 | 0.76555 |
-| **Genre + règles** | 0.8368 | **0.79665** |
-| GBC + règles | 0.8364 | 0.77272 |
+| Gender only (women live, men die) | 0.7867 | 0.76555 |
+| **Gender + rules** | 0.8368 | **0.79665** |
+| GBC + rules | 0.8364 | 0.77272 |
 
-- Genre + règles : 15 prédictions changées par rapport au genre seul, **14 justes**.
-- GBC + règles : diffère de genre + règles sur 40 passagers, le GBC a raison 15 fois et **tort 25 fois**.
-  Quand le GBC contredit la règle du sexe, il se trompe plus souvent qu'il ne tombe juste.
-  La CV (0.8364 contre 0.8368) ne voyait pas la différence.
+- Gender + rules: 15 predictions changed versus gender only, **14 correct**.
+- GBC + rules: differs from gender + rules on 40 passengers; the GBC is right 15 times and **wrong 25 times**.
+  When the GBC contradicts the sex rule, it is wrong more often than right.
+  CV (0.8364 vs 0.8368) did not see the difference.
 
-### 4. Groupes par nom de famille
+### 4. Groups by surname
 
-Hypothèse : des familles ont des tickets différents ; grouper aussi par nom (+ classe + port) trouverait plus de groupes.
+Hypothesis: some families have different tickets; also grouping by surname (+ class + port) would find more groups.
 
-- **Nom seul** (union ticket ou nom) : 3 prédictions changées sur le test. Sur le train : 6 corrections gagnées, **6 perdues**.
-  Les pertes viennent toutes d'un **faux groupe** : deux familles Andersson sans lien (tickets 347082 et 3101281).
-- **Nom + tickets proches** (`max_ticket_gap`) : même nom, classe, port, préfixe de ticket et numéros à au plus *k* d'écart.
-  Sur le train, toutes les vraies familles retrouvées sont à **1 d'écart** (Vander Planke 345763/4, Jussila 4136/7, Bourke 364848/9) :
-  6 corrections, 6 justes, le faux groupe Andersson disparaît. Seul k = 1 est validé par le train ; au-delà
-  on relie des cas non vérifiables (dont un autre Andersson à 9 d'écart).
+- **Surname alone** (ticket or surname): 3 predictions changed on the test set. On the training set: 6 corrections gained, **6 lost**.
+  The losses all come from a **false group**: two unrelated Andersson families (tickets 347082 and 3101281).
+- **Surname + nearby tickets** (`max_ticket_gap`): same surname, class, port, ticket prefix, and ticket numbers at most *k* apart.
+  In the training set, every real family found is **1 apart** (Vander Planke 345763/4, Jussila 4136/7, Bourke 364848/9):
+  6 corrections, 6 correct, and the false Andersson group disappears. Only k = 1 is validated by the training set; beyond it
+  we link cases that cannot be checked (including another Andersson 9 apart).
 
-| Version | CV strat. | Kaggle |
+| Version | Strat. CV | Kaggle |
 |---|---|---|
-| Genre + règles, ticket | 0.8368 | 0.79665 |
-| **Genre + règles, ticket + nom (écart ≤ 1)** | 0.8431 | **0.79904** |
+| Gender + rules, ticket | 0.8368 | 0.79665 |
+| **Gender + rules, ticket + surname (gap ≤ 1)** | 0.8431 | **0.79904** |
 
-Sur le test, une seule prédiction change (Ida Ilmakangas), et elle était juste. Le ticket capte déjà presque toutes les familles.
+On the test set, a single prediction changes (Ida Ilmakangas), and it was correct. Tickets already capture almost every family.
 
-### 5. Ce qui se fait de mieux (notebooks de Chris Deotte)
+### 5. State of the art (Chris Deotte's notebooks)
 
-Lus pour comparaison :
-[Titanic using Name only](https://www.kaggle.com/code/cdeotte/titanic-using-name-only-0-81818) et
+Read for comparison:
+[Titanic using Name only](https://www.kaggle.com/code/cdeotte/titanic-using-name-only-0-81818) and
 [Titanic WCG+XGBoost](https://www.kaggle.com/code/cdeotte/titanic-wcg-xgboost-0-84688).
 
-- Son modèle **WCG** (woman-child-groups) applique les mêmes deux règles, avec des groupes par nom de famille
-  (hors hommes adultes) complétés par le ticket.
-- **Attention** : ses scores (0.818 → 0.847) étaient calculés sur **209 passagers** (la moitié du test) ;
-  Kaggle note aujourd'hui les 418. Lui-même estimait le WCG à ~0.809 sur le test complet.
-  Notre 0.799–0.801 est donc au niveau du WCG.
-- Prédire quels **hommes adultes** survivent : motifs dans le train (1ʳᵉ classe, 20–36 ans), mais gain nul sur le test.
-- Prédire quelles **femmes seules de 3ᵉ classe** meurent : son meilleur levier après le WCG.
+- His **WCG** (woman-child-groups) model applies the same two rules, with groups by surname
+  (excluding adult men) completed by ticket.
+- **Caution**: his scores (0.818 → 0.847) were computed on **209 passengers** (half of the test set);
+  Kaggle now scores all 418. He himself estimated WCG at ~0.809 on the full test set.
+  Our 0.799–0.801 is therefore on par with WCG.
+- Predicting which **adult men** survive: patterns exist in the training set (1st class, age 20–36), but zero gain on the test set.
+- Predicting which **solo third-class women** die: his best lever after WCG.
 
-### 6. Femmes seules de 3ᵉ classe
+### 6. Solo third-class women
 
-Règle (`solo_female_rule`, seuils d'un arbre CART de Deotte) : femme de 3ᵉ classe, sans famille à bord,
-seule sur son ticket, avec un **prix par personne > 8 $ ou un âge > 25 ans → meurt**.
+Rule (`solo_female_rule`, thresholds from one of Deotte's CART trees): a third-class woman with no family aboard,
+alone on her ticket, with a **fare per person > $8 or age > 25 → dies**.
 
-| Version | CV strat. | Kaggle |
+| Version | Strat. CV | Kaggle |
 |---|---|---|
-| Groupes ticket + nom | 0.8431 | 0.79904 |
-| **+ femmes seules, seuils fixes (8 $ / 25 ans)** | 0.8498 | **0.80143** |
-| + femmes seules, arbre appris dans chaque pli (version honnête) | 0.8444 | non soumis |
+| Ticket + surname groups | 0.8431 | 0.79904 |
+| **+ solo women, fixed thresholds ($8 / 25 years)** | 0.8498 | **0.80143** |
+| + solo women, tree re-learned in each fold (honest version) | 0.8444 | not submitted |
 
-- Train : 20 femmes condamnées, 13 vraiment mortes (65 %).
-- Test : 17 changées, **9 justes et 8 fausses** (53 %), gain net d'une seule passagère.
-- La version honnête (l'arbre doit trouver ses seuils sans voir la partie validation) ne gagne que +0,13 pt :
-  les seuils 8 $ / 25 ans sont en partie taillés sur le train. Règle **fragile**, gardée parce qu'elle donne le record.
+- Training set: 20 women flagged, 13 actually died (65%).
+- Test set: 17 changed, **9 correct and 8 wrong** (53%), a net gain of a single passenger.
+- The honest version (the tree must find its thresholds without seeing the validation part) gains only +0.13 pt:
+  the $8 / 25-year thresholds are partly tailored to the training set. A **fragile** rule, kept because it gives the best score.
 
 ---
 
-## Ce qu'on a appris
+## What we learned
 
-1. **Le sexe fait l'essentiel** (0.766). La famille ajoute ~3 points. Le reste se joue sur une poignée de passagers.
-2. **Les modèles d'arbres surapprennent** sur ce petit jeu de données : leurs écarts à la règle du sexe sont surtout du bruit.
-   Une règle simple + quelques corrections ciblées bat tous nos RF/GBC.
-3. **La CV ne suffit pas à trier les bonnes idées** : elle n'a vu ni le piège FarePerPerson, ni la faiblesse de GBC + règles,
-   et elle surestime les règles dont les seuils ont été choisis sur tout le train. Pour une règle, préférer une version
-   « honnête » où les seuils sont réappris dans chaque pli.
-4. **Chaque soumission se joue à quelques passagers** : un écart de 1 ou 2 bonnes réponses (0,24 à 0,5 pt) relève du hasard.
-5. **Le plafond réaliste** sans tricher est vers 0.81–0.82 sur le test complet.
+1. **Sex does most of the work** (0.766). Family adds ~3 points. The rest comes down to a handful of passengers.
+2. **Tree models overfit** on this small dataset: their deviations from the sex rule are mostly noise.
+   A simple rule + a few targeted corrections beats all our RF/GBC models.
+3. **CV is not enough to sort good ideas from bad**: it missed the FarePerPerson trap and the weakness of GBC + rules,
+   and it overestimates rules whose thresholds were chosen on the whole training set. For a rule, prefer an
+   "honest" version where the thresholds are re-learned in each fold.
+4. **Each submission hinges on a few passengers**: a difference of 1 or 2 correct answers (0.24 to 0.5 pt) is down to chance.
+5. **The realistic ceiling** without cheating is around 0.81–0.82 on the full test set.
 
-## Pistes restantes
+## Next steps
 
-- Aligner nos groupes sur le WCG de Deotte (nom de famille seul + rattachement par ticket) : il condamne 14 femmes, nous 8.
-- Mettre à jour le notebook 04 pour utiliser `max_ticket_gap=1` et `solo_female_rule`.
-- Ménage : même imputer pour RF et GBC, retirer le StandardScaler (inutile pour des arbres), colonne Age_manquant,
-  traiter Fare = 0, supprimer le code mort de `features.py` (ticket_transformer, isNaN, rare_titles, docstrings périmées)
-  et les anciens CSV de `data/`.
+- Align our groups with Deotte's WCG (surname alone + linking by ticket): he flags 14 women, we flag 8.
+- Update notebook 04 to use `max_ticket_gap=1` and `solo_female_rule`.
+- Cleanup: same imputer for RF and GBC, drop the StandardScaler (useless for trees), add an Age_missing column,
+  handle Fare = 0, remove dead code from `features.py` (ticket_transformer, isNaN, rare_titles, outdated docstrings)
+  and the old CSVs in `data/`.
