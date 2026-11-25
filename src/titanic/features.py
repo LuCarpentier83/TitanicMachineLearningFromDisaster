@@ -198,15 +198,6 @@ def ticket_group(X):
     return pd.DataFrame({"TicketGroup": pd.cut(size, [0, 1, 4, np.inf], labels=False)})
 
 
-def fare_per_person(X):
-    """(Ticket, Fare) -> FarePerPerson = Fare ÷ nombre de passagers sur le ticket.
-
-    Fare est le prix du ticket entier : 69.55 pour les 11 Sage, soit 6.32 par personne.
-    """
-    size = X["Ticket"].map(TICKET_COUNTS).fillna(1)
-    return pd.DataFrame({"FarePerPerson": X["Fare"] / size})
-
-
 def family(X):
     """(SibSp, Parch) -> SibSp, Parch, FamilySize en 3 groupes : 0 = seul, 1 = 2 à 4, 2 = 5 et +.
 
@@ -225,8 +216,8 @@ def make_column_transformer(name="title"):
     """Colonnes brutes -> colonnes numériques (avec des NaN, imputés plus loin dans le pipeline).
 
     name="title" : comme le pipeline RF_KNN ; name="tfidf" : comme le pipeline GBC.
-    Age est rempli ici (médiane du titre) ; SibSp, Parch + FamilySize ; TicketGroup ; FarePerPerson
-    à la place de Fare ; remainder="passthrough" laisse passer Pclass.
+    Age est rempli ici (médiane du titre) ; SibSp, Parch + FamilySize ; TicketGroup ;
+    remainder="passthrough" laisse passer Pclass, Fare.
     """
     if name == "title":
         name_step = ("name", name_title(), ["Name"])
@@ -242,6 +233,5 @@ def make_column_transformer(name="title"):
         ("age", TitleMedianAge(), ["Name", "Age"]),
         ("family", FunctionTransformer(family), ["SibSp", "Parch"]),
         ("ticket_group", FunctionTransformer(ticket_group), ["Ticket"]),
-        ("fare", FunctionTransformer(fare_per_person), ["Ticket", "Fare"]),
     ], remainder="passthrough")
     return ct
