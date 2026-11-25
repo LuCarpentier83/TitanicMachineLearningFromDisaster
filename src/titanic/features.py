@@ -334,6 +334,28 @@ def group_rules(X_train, y_train, X_new, base_pred, max_ticket_gap=None):
     return pred
 
 
+def solo_female_rule(X_new, base_pred, fare_min=8, age_min=25):
+    """Corrige des prédictions : femme seule en 3e classe avec prix par personne > fare_min
+    ou âge > age_min -> morte (0). Les autres passagers gardent base_pred.
+
+    Femme seule = 3e classe, ni famille à bord (SibSp + Parch = 0) ni autre passager sur son
+    ticket (TICKET_COUNTS, train + test). Prix par personne = Fare / nb de passagers du ticket.
+    Âge manquant : seule la condition sur le prix joue.
+
+    Seuils tirés du notebook « Titanic WCG+XGBoost » de Chris Deotte (arbre CART).
+    Fragile : 65 % de mortes parmi les condamnées sur le train, +0.67 pt en CV avec ces seuils
+    fixes, mais +0.13 pt seulement quand un arbre apprend ses seuils dans chaque pli ;
+    sur Kaggle, 9 justes sur 17 changements (0.79904 -> 0.80143).
+    """
+    n_ticket = X_new["Ticket"].map(TICKET_COUNTS).fillna(1).values
+    solo = ((X_new["Sex"].values == "female") & (X_new["Pclass"].values == 3)
+            & (X_new["SibSp"].values + X_new["Parch"].values == 0) & (n_ticket == 1))
+    fare_pp = X_new["Fare"].values / n_ticket
+    pred = np.asarray(base_pred).copy()
+    pred[solo & ((fare_pp > fare_min) | (X_new["Age"].fillna(0).values > age_min))] = 0
+    return pred
+
+
 # --------------------------------------------------------------------------------------
 # Le morceau de pipeline que les notebooks importent
 # --------------------------------------------------------------------------------------
