@@ -8,3 +8,4 @@ date,file,sha256,message,public_score
 2026-11-25 15:27,gbc.csv,4e73f4ef0e51f02d52b4f36171d02afbf90ee82e98f1a4bc64fe4ceea9d7ac99,"GBC : FamilySize + TicketGroup, Fare brut (CV 0.8310)",0.76794
 2026-11-25 20:45,genre_regles.csv,28fcf6d6127277f5a85160a6a725b9f5f45b5a6cedf829ea58b32b759ab7ae11,Genre + règles survie du groupe (CV 0.8368),0.79665
 2026-11-25 20:50,gbc_regles.csv,67a13fefef612f5e32877a5d174184449d9cea3aca151db73cc60752a36d3ad9,GBC + règles survie du groupe (CV 0.8364),0.77272
+2026-11-25 21:06,genre_regles_nom.csv,e1272a2a71dc49a5c487b2478830553d9bb2c96bdc2f37ce2a68bbad5aa7b682,"Genre + règles groupe (ticket + nom, tickets à 1 d'écart)",0.79904
