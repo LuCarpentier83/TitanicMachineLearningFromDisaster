@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
+from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
@@ -42,6 +43,20 @@ def save_submission(test, ypred, name):
     path = SUBMISSIONS / f"{name}.csv"
     pd.DataFrame({"PassengerId": test["PassengerId"], "Survived": ypred}).to_csv(path, index=False)
     return path
+
+
+def group_cv(X, y, n_splits=5, n_repeats=5):
+    """Découpages de CV où un même ticket (famille, groupe de voyage) n'est jamais
+    à la fois dans le train et la validation.
+
+    Sans ça, la CV voit en validation des passagers dont la famille est dans le train :
+    elle est trop optimiste, alors que le test Kaggle contient surtout des groupes inconnus.
+    Renvoie une liste de n_splits × n_repeats couples (index train, index validation),
+    à passer en cv= de cross_val_score.
+    """
+    return [split for r in range(n_repeats)
+            for split in StratifiedGroupKFold(n_splits, shuffle=True, random_state=r)
+            .split(X, y, groups=X["Ticket"])]
 
 
 # --------------------------------------------------------------------------------------
