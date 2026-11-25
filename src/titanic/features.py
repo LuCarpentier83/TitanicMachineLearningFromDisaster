@@ -224,6 +224,70 @@ def family(X):
 
 
 # --------------------------------------------------------------------------------------
+# Survie du groupe : les autres passagers du même ticket ont-ils survécu ?
+# --------------------------------------------------------------------------------------
+
+class GroupSurvival(BaseEstimator, TransformerMixin):
+    """Ticket -> GroupSurv : taux de survie des AUTRES passagers du même ticket vus au fit.
+
+    0.5 si aucun autre membre du groupe n'est connu (passager seul, ou groupe absent du train).
+
+    Piège de fuite : sur les lignes du train, il ne faut pas compter le passager lui-même
+    (sinon on lui donne sa propre réponse). D'où fit_transform « leave-one-out » :
+    pour une ligne du train, on retire sa propre survie de la somme du groupe.
+    transform (validation, test) utilise tout le train, puisque ces passagers n'y sont pas.
+
+    Ne pas évaluer cette feature avec group_cv : par construction, aucun passager de
+    validation n'y a de membre de groupe dans le train, la feature y vaut toujours 0.5.
+    Le test Kaggle ressemble à une CV stratifiée (36 % des passagers du test ont un ticket
+    déjà vu dans le train, contre 34 % en validation stratifiée).
+    """
+
+    def fit(self, X, y):
+        t = pd.Series(np.asarray(y, dtype=float), index=X["Ticket"].values)
+        g = t.groupby(level=0)
+        self.sum_, self.count_ = g.sum(), g.count()
+        return self
+
+    def transform(self, X):
+        s = X["Ticket"].map(self.sum_).values
+        n = X["Ticket"].map(self.count_).fillna(0).values
+        out = np.where(n > 0, s / np.maximum(n, 1), 0.5)
+        return out.reshape(-1, 1)
+
+    def fit_transform(self, X, y):
+        self.fit(X, y)
+        s = X["Ticket"].map(self.sum_).values - np.asarray(y, dtype=float)
+        n = X["Ticket"].map(self.count_).values - 1
+        out = np.where(n > 0, s / np.maximum(n, 1), 0.5)
+        return out.reshape(-1, 1)
+
+    def get_feature_names_out(self, input_features=None):
+        return np.array(["GroupSurv"])
+
+
+def group_rules(X_train, y_train, X_new, base_pred):
+    """Corrige des prédictions avec la survie du groupe (même ticket) vue dans le train.
+
+    On ne regarde que les femmes et les garçons (titre Master) du groupe : le sort
+    des hommes adultes ne dit rien (ils mouraient presque tous, quel que soit le groupe).
+      - femme dont tous les femmes/garçons connus du groupe sont morts  -> morte (0)
+      - garçon dont tous les femmes/garçons connus du groupe ont survécu -> survivant (1)
+    Les autres passagers gardent base_pred.
+    """
+    title_tr = NameExtractor().transform(X_train[["Name"]]).ravel()
+    wc = (X_train["Sex"].values == "female") | (title_tr == "Master")
+    g = GroupSurvival().fit(X_train[wc], np.asarray(y_train)[wc])
+    n = X_new["Ticket"].map(g.count_).fillna(0).values
+    s = X_new["Ticket"].map(g.sum_).fillna(0).values
+    title_new = NameExtractor().transform(X_new[["Name"]]).ravel()
+    pred = np.asarray(base_pred).copy()
+    pred[(X_new["Sex"].values == "female") & (n > 0) & (s == 0)] = 0
+    pred[(title_new == "Master") & (n > 0) & (s == n)] = 1
+    return pred
+
+
+# --------------------------------------------------------------------------------------
 # Le morceau de pipeline que les notebooks importent
 # --------------------------------------------------------------------------------------
 
