@@ -6,3 +6,4 @@ date,file,sha256,message,public_score
 2026-11-24 22:30,gbc.csv,e34394b577223f460f53d3ea13f59c310edaccbbffc967827d5c23bd249a710e,"GBC : pont U, Embarked S, age mediane titre, titres regroupes",0.77511
 2026-11-25 15:09,gbc.csv,69e7ea08b5705b8d211082f81e3545801c1b5f6b89e8810ca3373721799354a4,"GBC : FamilySize, TicketGroup, FarePerPerson (CV 0.8323)",0.73684
 2026-11-25 15:27,gbc.csv,4e73f4ef0e51f02d52b4f36171d02afbf90ee82e98f1a4bc64fe4ceea9d7ac99,"GBC : FamilySize + TicketGroup, Fare brut (CV 0.8310)",0.76794
+2026-11-25 20:45,genre_regles.csv,28fcf6d6127277f5a85160a6a725b9f5f45b5a6cedf829ea58b32b759ab7ae11,Genre + règles survie du groupe (CV 0.8368),0.79665
