@@ -34,11 +34,10 @@ Submitting to Kaggle requires a Kaggle API token (`%USERPROFILE%\.kaggle\access_
 | `src/titanic/features.py` | All shared code: cleaning (pipeline pieces), grouped CV, group survival, rules |
 | `notebooks/02_random_forest.ipynb` | Random Forest |
 | `notebooks/03_gradient_boosting.ipynb` | Gradient Boosting (GBC), CV grouped by ticket |
-| `notebooks/04_survie_groupe.ipynb` | Group survival (`GroupSurv` feature and woman/boy rules) |
+| `notebooks/04_survie_groupe.ipynb` | Group survival (`GroupSurv` feature and every rule), CV of each step, generates all rule-based submissions |
 | `scripts/submit.py` | Kaggle submission: checks the format, refuses an already-submitted file, waits for the score, logs everything in `submissions/history.csv` |
 | `submissions/` | Submitted files and score history |
 | `data/train.csv`, `data/test.csv` | Kaggle data |
-| `data/ntrain.csv`, `ntest.csv`, `submit.csv` | Old pre-cleaned CSVs (from before the switch to pipelines), no longer used |
 
 ```powershell
 uv run jupyter lab                                                    # notebooks
@@ -174,6 +173,50 @@ alone on her ticket, with a **fare per person > $8 or age > 25 → dies**.
 
 ---
 
+### 7. Aligning with Deotte's WCG
+
+His code (hidden in the notebook page) was reimplemented as `wcg_rules`; it finds exactly his numbers
+(80 groups, 9 nannies/relatives, 8 boys saved, 14 women flagged). It differs from ours in three ways:
+
+- **Group key**: surname – class – ticket without its last character – fare – port
+  (his "nearby tickets" are tickets that differ only in the last digit, with the same fare).
+- **Nannies and relatives**: a woman or boy with no group joins the group of a passenger with the same ticket key.
+- **Unknown groups**: a group with no member in the training set counts as dead in 3rd class, alive in 1st/2nd.
+  This is where his extra flagged women come from (the Klasen and Peacock families, 3rd class, all in the test set).
+
+| Version | Strat. CV |
+|---|---|
+| Our groups (ticket + surname, gap ≤ 1) | 0.8431 |
+| Deotte's WCG alone, without the unknown-group rule | 0.8408 |
+| Deotte's WCG alone | 0.8442 |
+| Our groups, then Deotte's WCG on top | 0.8465 |
+| Our groups, then Deotte's WCG, then solo women | **0.8521** |
+
+Versus the best submission (0.80143), this changes 5 test predictions (Klasen ×2, Peacock ×2, Khalil),
+all women → dies: `submissions/wcg_deotte_femmes_seules.csv`, not submitted yet.
+
+### 8. Cleaning the RF / GBC pipelines
+
+| Model | Variant | Grouped CV | Strat. CV |
+|---|---|---|---|
+| RF | before (StandardScaler + iterative imputer) | 0.8063 | 0.8110 |
+| RF | no scaler, median imputer | 0.8061 | 0.8117 |
+| RF | + Age_missing column | 0.7969 | 0.8130 |
+| RF | + Fare = 0 treated as unknown | 0.8027 | 0.8135 |
+| GBC | before (StandardScaler + iterative imputer) | 0.8193 | 0.8310 |
+| GBC | no scaler, median imputer | 0.8193 | 0.8312 |
+| GBC | + Age_missing column | 0.8206 | 0.8321 |
+| GBC | + Fare = 0 treated as unknown | 0.8193 | 0.8294 |
+
+- **Scaler and imputer were useless**: trees only look at the order of values, and once age is filled by the title
+  median the training set has no missing value left (the test set has one, a fare). Both notebooks now use no scaler
+  and the same median imputer; the CV is unchanged (`rf.csv` changes by a single prediction).
+- **Age_missing** and **Fare = 0 → unknown**: effects of ±1 passenger, in both directions: noise, not adopted
+  (kept as options of `make_column_transformer`, off by default).
+- Dead code removed from `features.py`, old pre-cleaned CSVs removed from `data/`.
+
+---
+
 ## What we learned
 
 1. **Sex does most of the work** (0.766). Family adds ~3 points. The rest comes down to a handful of passengers.
@@ -187,8 +230,5 @@ alone on her ticket, with a **fare per person > $8 or age > 25 → dies**.
 
 ## Next steps
 
-- Align our groups with Deotte's WCG (surname alone + linking by ticket): he flags 14 women, we flag 8.
-- Update notebook 04 to use `max_ticket_gap=1` and `solo_female_rule`.
-- Cleanup: same imputer for RF and GBC, drop the StandardScaler (useless for trees), add an Age_missing column,
-  handle Fare = 0, remove dead code from `features.py` (ticket_transformer, isNaN, rare_titles, outdated docstrings)
-  and the old CSVs in `data/`.
+- Submit `submissions/wcg_deotte_femmes_seules.csv` (our groups + Deotte's WCG + solo women, CV 0.8521).
+- Beyond that, every remaining idea plays on a handful of passengers: expect gains and losses of ±1–2 answers.

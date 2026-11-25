@@ -1,7 +1,9 @@
-"""Nettoyage des données Titanic, partagé par tous les notebooks de modèles.
+"""Code partagé par les notebooks : chargement, nettoyage, CV, survie du groupe et règles.
 
-Ce fichier reprend TEL QUEL le code de final_notebook_cleaning_column_transformer.ipynb
-(y compris ses défauts connus, corrigés plus tard) : il ne fait que le ranger.
+- Nettoyage : make_column_transformer (colonnes brutes -> colonnes numériques).
+- CV : group_cv (groupée par ticket).
+- Survie du groupe : GroupSurvival (feature), group_rules, wcg_rules, solo_female_rule (règles
+  appliquées après un modèle de base).
 
 Règle : ici on écrit des MORCEAUX DE PIPELINE, jamais un CSV pré-nettoyé.
 Le scaler et l'imputer restent dans le pipeline du notebook, pour être réappris à chaque
@@ -16,7 +18,6 @@ import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import StratifiedGroupKFold
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
 
@@ -71,19 +72,8 @@ PORTS = ["C", "Q", "S"]                            # Embarked
 # Fonctions ligne par ligne (une valeur en entrée -> une ou plusieurs colonnes en sortie)
 # --------------------------------------------------------------------------------------
 
-def isNaN(x):
-    return x != x
-
-
 def sex(s):
     return 1 * (s == "male")
-
-
-def ticket(t):
-    try:
-        return int(t.split()[-1])
-    except Exception:
-        return np.nan
 
 
 def cabin(c):
@@ -126,7 +116,6 @@ class Func_To_Transformer:
 
 
 cabin_transformer = Func_To_Transformer(cabin, ["Cabin"], ["Pont_" + v for v in DECKS])
-ticket_transformer = Func_To_Transformer(ticket, ["Ticket"], ["Ticket"])
 sex_transformer = Func_To_Transformer(sex, ["Sex"], ["Sex"])
 embarked_transformer = Func_To_Transformer(embarked, ["Embarked"], ["Port_" + p for p in PORTS])
 
@@ -143,10 +132,6 @@ TITLE_MAP = {"Mlle": "Miss", "Ms": "Miss",
 
 class NameExtractor(BaseEstimator, TransformerMixin):
     """Name -> titre : Mr / Mrs / Miss / Master, sinon Rare (titres de femmes regroupés via TITLE_MAP)."""
-
-    def __init__(self, rare_titles=None):
-        self.rare_titles = rare_titles if rare_titles else [
-            "Dr", "Rev", "Mlle", "Major", "Col", "Countess", "Capt", "Ms", "Sir", "Lady", "Mme", "Don", "Jonkheer"]
 
     def fit(self, X, y=None):
         return self
@@ -334,6 +319,62 @@ def group_rules(X_train, y_train, X_new, base_pred, max_ticket_gap=None):
     return pred
 
 
+def _wcg_group_ids(D):
+    """Groupes femmes/enfants (WCG) de Chris Deotte, calculés sur train + test (sans Survived).
+
+    GroupId = nom - classe - ticket sans son dernier caractère - prix - port ; hommes adultes exclus,
+    groupes d'une seule personne -> "noGroup". Puis une femme/un garçon sans groupe rejoint celui
+    du premier passager de même TicketId (classe, ticket au dernier caractère près, prix, port) :
+    nounous et proches. Renvoie une Series PassengerId -> GroupId.
+    """
+    D = D.reset_index(drop=True)
+    man = (D["Sex"].values == "male") & ~D["Name"].str.contains(r"\bMaster\.").values
+    tk = D["Ticket"].str[:-1] + "X"
+    fare, emb = D["Fare"].astype(str), D["Embarked"].fillna("S")
+    gid = (D["Name"].str.split(",").str[0] + "-" + D["Pclass"].astype(str) + "-" + tk + "-" + fare
+           + "-" + emb).values.astype(object)
+    gid[man] = "noGroup"
+    # Mrs Wilkes (Needs) est la soeur de Mrs Hocking (Needs) : correction à la main de Deotte
+    pid = D["PassengerId"].values
+    gid[pid == 893] = gid[pid == 775][0]
+    counts = pd.Series(gid).value_counts()
+    gid[pd.Series(gid).map(counts).values <= 1] = "noGroup"
+    tid = (D["Pclass"].astype(str) + "-" + tk + "-" + fare + "-" + emb).values
+    for i in np.where(~man & (gid == "noGroup"))[0]:
+        gid[i] = gid[np.where(tid == tid[i])[0][0]]
+    return pd.Series(gid, index=pid)
+
+
+WCG_GROUPS = _wcg_group_ids(_all)
+
+
+def wcg_rules(X_train, y_train, X_new, base_pred, unknown_groups=True):
+    """Règles femmes/garçons de Deotte, avec ses groupes (WCG_GROUPS) au lieu des nôtres.
+
+    Survie du groupe = moyenne des membres vus dans le train.
+      - femme dont le groupe a une survie de 0 -> morte (0)
+      - garçon (Master) dont le groupe a une survie de 1 -> survivant (1)
+    unknown_groups=True : un groupe sans aucun membre dans le train compte comme mort en 3e classe,
+    vivant en 1re/2e (sur le test : familles Klasen et Peacock -> 4 femmes condamnées).
+
+    S'utilise par-dessus group_rules : en CV stratifiée 5 x 5, group_rules(max_ticket_gap=1) puis
+    wcg_rules = 0.8465, contre 0.8431 pour group_rules seul et 0.8442 pour wcg_rules seul.
+    """
+    gid_tr = X_train["PassengerId"].map(WCG_GROUPS).values
+    surv = pd.Series(np.asarray(y_train, dtype=float)).groupby(gid_tr).mean()
+    g = X_new["PassengerId"].map(WCG_GROUPS).values
+    s = pd.Series(g).map(surv).to_numpy(dtype=float, copy=True)
+    s[g == "noGroup"] = np.nan
+    if unknown_groups:
+        unk = np.isnan(s) & (g != "noGroup")
+        s[unk] = np.where(X_new["Pclass"].values[unk] == 3, 0, 1)
+    boy = X_new["Name"].str.contains(r"\bMaster\.").values
+    pred = np.asarray(base_pred).copy()
+    pred[(X_new["Sex"].values == "female") & (s == 0)] = 0
+    pred[boy & (s == 1)] = 1
+    return pred
+
+
 def solo_female_rule(X_new, base_pred, fare_min=8, age_min=25):
     """Corrige des prédictions : femme seule en 3e classe avec prix par personne > fare_min
     ou âge > age_min -> morte (0). Les autres passagers gardent base_pred.
@@ -360,26 +401,39 @@ def solo_female_rule(X_new, base_pred, fare_min=8, age_min=25):
 # Le morceau de pipeline que les notebooks importent
 # --------------------------------------------------------------------------------------
 
-def make_column_transformer(name="title"):
+def age_missing(X):
+    """Age -> Age_manquant : 1 si l'âge était inconnu (avant d'être rempli par la médiane du titre)."""
+    return pd.DataFrame({"Age_manquant": X["Age"].isna().astype(int).values})
+
+
+def fare_zero_as_nan(X):
+    """Fare -> Fare, avec les billets à 0 $ remplacés par NaN (imputés plus loin comme un prix inconnu).
+
+    15 passagers du train ont Fare = 0 (employés de la compagnie, invités) : ce n'est pas un vrai prix.
+    """
+    return X[["Fare"]].replace(0, np.nan)
+
+
+def make_column_transformer(with_age_missing=False, fare_zero_nan=False):
     """Colonnes brutes -> colonnes numériques (avec des NaN, imputés plus loin dans le pipeline).
 
-    name="title" : comme le pipeline RF_KNN ; name="tfidf" : comme le pipeline GBC.
-    Age est rempli ici (médiane du titre) ; SibSp, Parch + FamilySize ; TicketGroup ;
-    remainder="passthrough" laisse passer Pclass, Fare.
+    Cabin -> pont (one-hot) ; Sex ; Embarked (one-hot) ; Name -> titre (one-hot) ;
+    Age rempli par la médiane du titre ; SibSp, Parch + FamilySize ; TicketGroup ; Pclass et Fare tels quels.
+    Options testées, non retenues (README, step 8 : effets de l'ordre du bruit) :
+    with_age_missing ajoute Age_manquant ; fare_zero_nan traite Fare = 0 comme un prix inconnu.
     """
-    if name == "title":
-        name_step = ("name", name_title(), ["Name"])
-    else:
-        raise ValueError(f"name doit valoir 'title' ou 'tfidf', pas {name!r}")
-
-    ct = ColumnTransformer(transformers=[
+    steps = [
         ("drop_id", "drop", ["PassengerId"]),
         ("cabin", cabin_transformer.get_transformer, cabin_transformer.cols_in),
         ("sex", sex_transformer.get_transformer, sex_transformer.cols_in),
         ("embarked", embarked_transformer.get_transformer, embarked_transformer.cols_in),
-        name_step,
+        ("name", name_title(), ["Name"]),
         ("age", TitleMedianAge(), ["Name", "Age"]),
         ("family", FunctionTransformer(family), ["SibSp", "Parch"]),
         ("ticket_group", FunctionTransformer(ticket_group), ["Ticket"]),
-    ], remainder="passthrough")
-    return ct
+    ]
+    if with_age_missing:
+        steps.append(("age_missing", FunctionTransformer(age_missing), ["Age"]))
+    if fare_zero_nan:
+        steps.append(("fare", FunctionTransformer(fare_zero_as_nan), ["Fare"]))
+    return ColumnTransformer(transformers=steps, remainder="passthrough")
