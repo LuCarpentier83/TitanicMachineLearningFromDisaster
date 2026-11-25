@@ -183,6 +183,41 @@ class TitleMedianAge(BaseEstimator, TransformerMixin):
 
 
 # --------------------------------------------------------------------------------------
+# Famille : taille de la famille à bord
+# --------------------------------------------------------------------------------------
+
+# Nombre de passagers par ticket, compté sur train + test.
+# On ne lit que les numéros de ticket (jamais Survived) : pas de fuite.
+_all = pd.concat([pd.read_csv(DATA / "train.csv"), pd.read_csv(DATA / "test.csv")])
+TICKET_COUNTS = _all["Ticket"].value_counts()
+
+
+def ticket_group(X):
+    """Ticket -> TicketGroup en 3 groupes : 0 = seul sur son ticket, 1 = 2 à 4, 2 = 5 et +."""
+    size = X["Ticket"].map(TICKET_COUNTS).fillna(1)
+    return pd.DataFrame({"TicketGroup": pd.cut(size, [0, 1, 4, np.inf], labels=False)})
+
+
+def fare_per_person(X):
+    """(Ticket, Fare) -> FarePerPerson = Fare ÷ nombre de passagers sur le ticket.
+
+    Fare est le prix du ticket entier : 69.55 pour les 11 Sage, soit 6.32 par personne.
+    """
+    size = X["Ticket"].map(TICKET_COUNTS).fillna(1)
+    return pd.DataFrame({"FarePerPerson": X["Fare"] / size})
+
+
+def family(X):
+    """(SibSp, Parch) -> SibSp, Parch, FamilySize en 3 groupes : 0 = seul, 1 = 2 à 4, 2 = 5 et +.
+
+    Taille = SibSp + Parch + 1 (le +1 = le passager).
+    """
+    X = X.copy()
+    X["FamilySize"] = pd.cut(X["SibSp"] + X["Parch"] + 1, [0, 1, 4, 11], labels=False)
+    return X
+
+
+# --------------------------------------------------------------------------------------
 # Le morceau de pipeline que les notebooks importent
 # --------------------------------------------------------------------------------------
 
@@ -190,7 +225,8 @@ def make_column_transformer(name="title"):
     """Colonnes brutes -> colonnes numériques (avec des NaN, imputés plus loin dans le pipeline).
 
     name="title" : comme le pipeline RF_KNN ; name="tfidf" : comme le pipeline GBC.
-    Age est rempli ici (médiane du titre) ; remainder="passthrough" laisse passer Pclass, SibSp, Parch, Fare.
+    Age est rempli ici (médiane du titre) ; SibSp, Parch + FamilySize ; TicketGroup ; FarePerPerson
+    à la place de Fare ; remainder="passthrough" laisse passer Pclass.
     """
     if name == "title":
         name_step = ("name", name_title(), ["Name"])
@@ -198,11 +234,14 @@ def make_column_transformer(name="title"):
         raise ValueError(f"name doit valoir 'title' ou 'tfidf', pas {name!r}")
 
     ct = ColumnTransformer(transformers=[
-        ("drop_id", "drop", ["PassengerId", "Ticket"]),
+        ("drop_id", "drop", ["PassengerId"]),
         ("cabin", cabin_transformer.get_transformer, cabin_transformer.cols_in),
         ("sex", sex_transformer.get_transformer, sex_transformer.cols_in),
         ("embarked", embarked_transformer.get_transformer, embarked_transformer.cols_in),
         name_step,
         ("age", TitleMedianAge(), ["Name", "Age"]),
+        ("family", FunctionTransformer(family), ["SibSp", "Parch"]),
+        ("ticket_group", FunctionTransformer(ticket_group), ["Ticket"]),
+        ("fare", FunctionTransformer(fare_per_person), ["Ticket", "Fare"]),
     ], remainder="passthrough")
     return ct
